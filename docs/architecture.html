@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Truth or Lie Detector — Animated Architecture</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#12151a; --muted:#5b6472; --line:#d9dee6;
+    --accent:#4a90d9; --visual:#4a90d9; --audio:#c9873a; --fuse:#7b5ea7;
+    --cnn:#1f4e79; --rnn:#8a3b3b; --out:#2f7d52; --warn:#b3541e;
+    --node:#ffffff; --nodeink:#12151a; --shadow:rgba(16,20,28,.10);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f1319; --panel:#161b23; --ink:#e8ecf2; --muted:#98a3b3; --line:#2a323d;
+      --accent:#6aa9e9; --visual:#6aa9e9; --audio:#e0a35e; --fuse:#a586d0;
+      --cnn:#5b9bd5; --rnn:#d17b7b; --out:#57b98a; --warn:#e08a4e;
+      --node:#1d232c; --nodeink:#e8ecf2; --shadow:rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1319; --panel:#161b23; --ink:#e8ecf2; --muted:#98a3b3; --line:#2a323d;
+    --accent:#6aa9e9; --visual:#6aa9e9; --audio:#e0a35e; --fuse:#a586d0;
+    --cnn:#5b9bd5; --rnn:#d17b7b; --out:#57b98a; --warn:#e08a4e;
+    --node:#1d232c; --nodeink:#e8ecf2; --shadow:rgba(0,0,0,.45);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:1200px; margin:0 auto; padding:28px 20px 56px}
+  header{margin-bottom:22px}
+  h1{font-size:1.6rem; margin:0 0 6px; letter-spacing:-.01em}
+  .sub{color:var(--muted); margin:0; max-width:70ch}
+
+  .stage-wrap{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:14px; box-shadow:0 1px 3px var(--shadow); overflow-x:auto;
+  }
+  svg{display:block; width:100%; min-width:840px; height:auto}
+
+  .controls{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0 22px}
+  button{
+    font:inherit; font-weight:600; color:var(--ink); background:var(--panel);
+    border:1px solid var(--line); border-radius:9px; padding:8px 15px; cursor:pointer;
+  }
+  button:hover{border-color:var(--accent); color:var(--accent)}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  button.primary:hover{opacity:.9; color:#fff}
+  .spacer{flex:1}
+  .speed{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:.9rem}
+
+  /* --- SVG node styling --- */
+  .node rect{
+    fill:var(--node); stroke:var(--line); stroke-width:1.5; rx:11;
+    transition:stroke .28s ease, stroke-width .28s ease, filter .28s ease;
+  }
+  .node .t{fill:var(--nodeink); font-weight:650; font-size:14px}
+  .node .d{fill:var(--muted); font-size:11.5px}
+  .node.on rect{stroke-width:2.6; filter:drop-shadow(0 0 9px currentColor)}
+  .node.v{color:var(--visual)} .node.a{color:var(--audio)}
+  .node.f{color:var(--fuse)}   .node.c{color:var(--cnn)}
+  .node.r{color:var(--rnn)}    .node.o{color:var(--out)}
+  .node.on rect{stroke:currentColor}
+  .node.dim{opacity:.42; transition:opacity .28s ease}
+
+  .link{fill:none; stroke:var(--line); stroke-width:2.2; transition:stroke .28s ease, opacity .28s ease}
+  .link.on{stroke:currentColor; stroke-dasharray:7 6; animation:flow 1s linear infinite}
+  .link.v.on{color:var(--visual)} .link.a.on{color:var(--audio)}
+  .link.f.on{color:var(--fuse)}   .link.c.on{color:var(--cnn)}
+  .link.r.on{color:var(--rnn)}
+  @keyframes flow{to{stroke-dashoffset:-26}}
+
+  .tag{fill:var(--muted); font-size:11px; font-weight:600}
+  .band{fill:none; stroke:var(--line); stroke-dasharray:3 5; rx:12}
+  .bandlabel{font-size:11.5px; font-weight:700; letter-spacing:.06em}
+
+  /* --- detail panel --- */
+  .detail{
+    background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--accent);
+    border-radius:12px; padding:16px 18px; min-height:112px;
+  }
+  .detail h2{margin:0 0 4px; font-size:1.05rem}
+  .detail .step{color:var(--muted); font-size:.78rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase}
+  .detail p{margin:8px 0 0; color:var(--muted); max-width:80ch}
+  .detail code{
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+    padding:1px 6px; border-radius:5px; font-size:.87em; color:var(--ink);
+  }
+  .shape{
+    display:inline-block; margin-top:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:.85rem; color:var(--ink); background:color-mix(in srgb, var(--ink) 7%, transparent);
+    padding:4px 10px; border-radius:7px;
+  }
+
+  .note{
+    margin-top:22px; padding:14px 16px; border-radius:12px;
+    border:1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+    background:color-mix(in srgb, var(--warn) 9%, transparent);
+  }
+  .note strong{color:var(--warn)}
+  .note p{margin:6px 0 0; color:var(--muted)}
+  footer{margin-top:26px; color:var(--muted); font-size:.86rem}
+  a{color:var(--accent)}
+
+  @media (prefers-reduced-motion: reduce){
+    .link.on{animation:none}
+    .token{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>AI Truth or Lie Detector — Pipeline Architecture</h1>
+  <p class="sub">
+    One video clip in, a truth/lie probability out. The visual and audio branches are
+    processed independently, fused into a single 1453-dimensional vector, then handed to
+    one of two classifier heads.
+  </p>
+</header>
+
+<div class="stage-wrap">
+<svg viewBox="0 0 1240 470" role="img" aria-label="Animated diagram of the truth or lie detection pipeline">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <!-- branch bands -->
+  <rect class="band" x="176" y="18" width="524" height="140"/>
+  <text class="bandlabel" x="192" y="38" fill="var(--visual)">VISUAL BRANCH</text>
+  <rect class="band" x="176" y="312" width="354" height="140"/>
+  <text class="bandlabel" x="192" y="332" fill="var(--audio)">AUDIO BRANCH</text>
+
+  <!-- links -->
+  <g fill="none" marker-end="url(#ah)">
+    <path id="l0" class="link v" d="M170,236 C182,236 182,88 190,88"/>
+    <path id="l1" class="link a" d="M170,236 C182,236 182,384 190,384"/>
+    <path id="l2" class="link v" d="M340,88 L358,88"/>
+    <path id="l3" class="link v" d="M510,88 L528,88"/>
+    <path id="l4" class="link f" d="M680,88 C692,88 692,236 698,236"/>
+    <path id="l5" class="link a" d="M340,384 L358,384"/>
+    <path id="l6" class="link f" d="M510,384 C610,384 620,236 698,236"/>
+    <path id="l7" class="link c" d="M850,236 C866,236 866,128 878,128"/>
+    <path id="l8" class="link r" d="M850,236 C866,236 866,344 878,344"/>
+    <path id="l9" class="link c" d="M1030,128 C1042,128 1042,236 1048,236"/>
+    <path id="l10" class="link r" d="M1030,344 C1042,344 1042,236 1048,236"/>
+  </g>
+
+  <!-- travelling token -->
+  <circle class="token" id="token" r="6" fill="var(--accent)" opacity="0"/>
+
+  <!-- nodes -->
+  <g class="node o" id="n0" data-step="0">
+    <rect x="20" y="198" width="150" height="76"/>
+    <text class="t" x="95" y="228" text-anchor="middle">Video clip</text>
+    <text class="d" x="95" y="248" text-anchor="middle">~3.7 s @ ~27 fps</text>
+    <text class="d" x="95" y="263" text-anchor="middle">829 in the dataset</text>
+  </g>
+
+  <g class="node v" id="n1" data-step="1">
+    <rect x="190" y="50" width="150" height="76"/>
+    <text class="t" x="265" y="80" text-anchor="middle">Frame sampler</text>
+    <text class="d" x="265" y="100" text-anchor="middle">30 evenly spaced</text>
+    <text class="d" x="265" y="115" text-anchor="middle">resize 224x224, RGB</text>
+  </g>
+
+  <g class="node v" id="n2" data-step="2">
+    <rect x="360" y="50" width="150" height="76"/>
+    <text class="t" x="435" y="80" text-anchor="middle">MobileNetV2</text>
+    <text class="d" x="435" y="100" text-anchor="middle">frozen, ImageNet</text>
+    <text class="d" x="435" y="115" text-anchor="middle">30 x 1280</text>
+  </g>
+
+  <g class="node v" id="n3" data-step="3">
+    <rect x="530" y="50" width="150" height="76"/>
+    <text class="t" x="605" y="80" text-anchor="middle">Mean-pool</text>
+    <text class="d" x="605" y="100" text-anchor="middle">over 30 frames</text>
+    <text class="d" x="605" y="115" text-anchor="middle">1280-d</text>
+  </g>
+
+  <g class="node a" id="n4" data-step="4">
+    <rect x="190" y="346" width="150" height="76"/>
+    <text class="t" x="265" y="376" text-anchor="middle">ffmpeg demux</text>
+    <text class="d" x="265" y="396" text-anchor="middle">WAV @ 22.05 kHz</text>
+    <text class="d" x="265" y="411" text-anchor="middle">uuid temp file</text>
+  </g>
+
+  <g class="node a" id="n5" data-step="5">
+    <rect x="360" y="346" width="150" height="76"/>
+    <text class="t" x="435" y="376" text-anchor="middle">librosa</text>
+    <text class="d" x="435" y="396" text-anchor="middle">MFCC / chroma / mel</text>
+    <text class="d" x="435" y="411" text-anchor="middle">contrast / tonnetz = 173-d</text>
+  </g>
+
+  <g class="node f" id="n6" data-step="6">
+    <rect x="700" y="198" width="150" height="76"/>
+    <text class="t" x="775" y="228" text-anchor="middle">Scale + Concat</text>
+    <text class="d" x="775" y="248" text-anchor="middle">StandardScaler</text>
+    <text class="d" x="775" y="263" text-anchor="middle">1280 + 173 = 1453-d</text>
+  </g>
+
+  <g class="node c" id="n7" data-step="7">
+    <rect x="880" y="90" width="150" height="76"/>
+    <text class="t" x="955" y="120" text-anchor="middle">1D CNN head</text>
+    <text class="d" x="955" y="140" text-anchor="middle">Conv1D 64 -&gt; 128</text>
+    <text class="d" x="955" y="155" text-anchor="middle">98.0% / AUC 0.998</text>
+  </g>
+
+  <g class="node r" id="n8" data-step="8">
+    <rect x="880" y="306" width="150" height="76"/>
+    <text class="t" x="955" y="336" text-anchor="middle">SimpleRNN head</text>
+    <text class="d" x="955" y="356" text-anchor="middle">RNN 128 -&gt; 64</text>
+    <text class="d" x="955" y="371" text-anchor="middle">70.2% / AUC 0.737</text>
+  </g>
+
+  <g class="node o" id="n9" data-step="9">
+    <rect x="1050" y="198" width="150" height="76"/>
+    <text class="t" x="1125" y="228" text-anchor="middle">Softmax</text>
+    <text class="d" x="1125" y="248" text-anchor="middle">index 0 = lie</text>
+    <text class="d" x="1125" y="263" text-anchor="middle">index 1 = truth</text>
+  </g>
+
+  <text class="tag" x="605" y="150" text-anchor="middle">time axis discarded here</text>
+</svg>
+</div>
+
+<div class="controls">
+  <button class="primary" id="play">Pause</button>
+  <button id="prev">&larr; Back</button>
+  <button id="next">Next &rarr;</button>
+  <button id="restart">Restart</button>
+  <div class="spacer"></div>
+  <label class="speed">Speed
+    <input type="range" id="speed" min="600" max="3200" step="200" value="1900">
+  </label>
+  <button id="theme">Toggle theme</button>
+</div>
+
+<div class="detail" id="detail">
+  <div class="step" id="d-step">Step 1 of 10</div>
+  <h2 id="d-title">Video clip</h2>
+  <p id="d-body"></p>
+  <div class="shape" id="d-shape"></div>
+</div>
+
+<div class="note">
+  <strong>A caveat that belongs on the diagram.</strong>
+  <p>
+    The mean-pool stage collapses the 30-frame axis before either head runs, so the
+    "RNN" receives a sequence over <em>feature indices</em>, not over time. This pipeline
+    compares two classifier heads on an identical pooled vector — it is not a fair test of
+    convolution versus recurrence. The un-pooled <code>(30, 1280)</code> tensors are now
+    saved so a genuine temporal model can be trained later.
+  </p>
+</div>
+
+<footer>
+  Part of the <a href="https://github.com/KesharaGunathilaka/True-or-Lie-Detector-AI">AI Truth or Lie Detector</a>
+  project. See the repository README for results, limitations and the trial-level leakage analysis.
+</footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STEPS = [
+    { node:"n0", links:[], title:"Video clip",
+      body:"A short clip segmented from a courtroom video. The dataset holds 829 such clips, averaging 3.74 seconds at roughly 27 fps. Crucially, these 829 clips come from only 109 source trials — about 7.6 clips per person.",
+      shape:"input: one .mp4 file" },
+
+    { node:"n1", links:["l0"], title:"Frame sampler",
+      body:"Thirty evenly spaced frames are pulled with np.linspace over the clip's frame count, resized to 224×224 and converted BGR→RGB. Every clip yields the same shape, so one unreadable file cannot break a batch of 800.",
+      shape:"(30, 224, 224, 3) uint8" },
+
+    { node:"n2", links:["l2"], title:"MobileNetV2 encoder",
+      body:"A frozen ImageNet-pretrained MobileNetV2 with global average pooling embeds each frame into 1280 dimensions. Frozen means no gradients flow here — it is a fixed feature extractor, which is why training the heads is fast.",
+      shape:"(30, 1280) float32" },
+
+    { node:"n3", links:["l3"], title:"Temporal mean-pool",
+      body:"The 30 per-frame embeddings are averaged into one vector. This is the pipeline's most consequential design decision: it makes the representation compact, and it throws away all temporal ordering.",
+      shape:"(1280,) float32" },
+
+    { node:"n4", links:["l1"], title:"ffmpeg demux",
+      body:"Audio is extracted to a WAV at 22.05 kHz. Each call writes to a uuid-named temp file — the original shared one filename across four worker threads, which raced to overwrite and delete each other and silently lost audio for 17 clips.",
+      shape:"waveform @ 22050 Hz" },
+
+    { node:"n5", links:["l5"], title:"librosa descriptor",
+      body:"Five feature families are computed and their per-coefficient means concatenated: 20 MFCC + 12 chroma + 128 mel + 7 spectral contrast + 6 tonnetz. Any failure returns a zero vector of exactly this width so downstream shapes stay consistent.",
+      shape:"(173,) float32" },
+
+    { node:"n6", links:["l4","l6"], title:"Scale and fuse",
+      body:"Both modalities are standardised with scalers fit on the training set only — never on the evaluation data — then concatenated. The scalers and the label encoder are pickled, so the pipeline is genuinely reloadable for inference.",
+      shape:"(1453,) = 1280 visual + 173 audio" },
+
+    { node:"n7", links:["l7"], title:"1D CNN head",
+      body:"Two Conv1D blocks (64 then 128 filters, kernel 3) each followed by batch norm, max pooling and dropout, then a 128-unit dense layer. Note it convolves across the feature axis, not across space or time — the spatial work was already done by MobileNetV2.",
+      shape:"98.0% accuracy · ROC AUC 0.998" },
+
+    { node:"n8", links:["l8"], title:"SimpleRNN head",
+      body:"Two stacked SimpleRNN layers (128 then 64 units) over the same input. Because pooling already removed the time axis, this recurrence runs over feature positions and cannot model behaviour over time — which is the honest explanation for its weaker score.",
+      shape:"70.2% accuracy · ROC AUC 0.737" },
+
+    { node:"n9", links:["l9","l10"], title:"Softmax output",
+      body:"A two-class softmax. LabelEncoder sorts alphabetically, so index 0 is 'lie' and index 1 is 'truth' — a detail that inverted the per-class write-up until it was caught. Both heads were trained with Adam at 1e-4 on categorical crossentropy.",
+      shape:"(2,) probabilities — [lie, truth]" }
+  ];
+
+  var svg = document.querySelector("svg");
+  var token = document.getElementById("token");
+  var idx = 0, playing = true, timer = null;
+  var delay = 1900;
+
+  var dStep  = document.getElementById("d-step");
+  var dTitle = document.getElementById("d-title");
+  var dBody  = document.getElementById("d-body");
+  var dShape = document.getElementById("d-shape");
+  var playBtn = document.getElementById("play");
+
+  function clearState(){
+    svg.querySelectorAll(".node").forEach(function(n){ n.classList.remove("on","dim"); });
+    svg.querySelectorAll(".link").forEach(function(l){ l.classList.remove("on"); });
+  }
+
+  function moveToken(linkId){
+    var path = document.getElementById(linkId);
+    if(!path || typeof path.getTotalLength !== "function") return;
+    var len = path.getTotalLength();
+    if(!len) return;
+    var start = performance.now();
+    var dur = Math.min(delay * 0.72, 1300);
+    token.setAttribute("opacity","1");
+    function frame(now){
+      var t = Math.min((now - start) / dur, 1);
+      var p = path.getPointAtLength(len * t);
+      token.setAttribute("cx", p.x);
+      token.setAttribute("cy", p.y);
+      if(t < 1 && playing !== null){ requestAnimationFrame(frame); }
+      else { token.setAttribute("opacity","0"); }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function render(){
+    var s = STEPS[idx];
+    clearState();
+
+    svg.querySelectorAll(".node").forEach(function(n){
+      if(n.id !== s.node) n.classList.add("dim");
+    });
+    var active = document.getElementById(s.node);
+    if(active){ active.classList.add("on"); active.classList.remove("dim"); }
+
+    s.links.forEach(function(id){
+      var l = document.getElementById(id);
+      if(l) l.classList.add("on");
+    });
+    if(s.links.length) moveToken(s.links[s.links.length - 1]);
+
+    dStep.textContent  = "Step " + (idx + 1) + " of " + STEPS.length;
+    dTitle.textContent = s.title;
+    dBody.textContent  = s.body;
+    dShape.textContent = s.shape;
+
+    var col = getComputedStyle(active).color;
+    document.getElementById("detail").style.borderLeftColor = col;
+    token.setAttribute("fill", col);
+  }
+
+  function next(){ idx = (idx + 1) % STEPS.length; render(); }
+  function prev(){ idx = (idx - 1 + STEPS.length) % STEPS.length; render(); }
+
+  function schedule(){
+    clearInterval(timer);
+    if(playing) timer = setInterval(next, delay);
+  }
+
+  document.getElementById("next").onclick    = function(){ playing = false; playBtn.textContent = "Play"; schedule(); next(); };
+  document.getElementById("prev").onclick    = function(){ playing = false; playBtn.textContent = "Play"; schedule(); prev(); };
+  document.getElementById("restart").onclick = function(){ idx = 0; render(); schedule(); };
+
+  playBtn.onclick = function(){
+    playing = !playing;
+    playBtn.textContent = playing ? "Pause" : "Play";
+    schedule();
+  };
+
+  document.getElementById("speed").oninput = function(e){
+    // Slider reads left-to-right as "faster"; invert so the label matches.
+    delay = 3800 - Number(e.target.value);
+    schedule();
+  };
+
+  document.getElementById("theme").onclick = function(){
+    var cur = document.documentElement.getAttribute("data-theme");
+    if(!cur){
+      cur = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+    render();
+  };
+
+  svg.querySelectorAll(".node").forEach(function(n){
+    n.style.cursor = "pointer";
+    n.onclick = function(){
+      var step = Number(n.getAttribute("data-step"));
+      if(!isNaN(step)){
+        idx = step; playing = false; playBtn.textContent = "Play"; schedule(); render();
+      }
+    };
+  });
+
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches){
+    playing = false;
+    playBtn.textContent = "Play";
+  }
+
+  render();
+  schedule();
+})();
+</script>
+</body>
+</html>
