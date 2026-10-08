@@ -1,1 +1,49 @@
+# --- Dataset (328 MB of video; see README "Data Setup") --------------------
 /data/
+
+# --- Generated pipeline artifacts ------------------------------------------
+/processed_data/
+*.npy
+*.pkl
+
+# Feature tables written by the EDA cells
+train_features.csv
+test_features.csv
+combined_features.csv
+
+# Plots written by plt.savefig() in the EDA cells.
+# The curated copies committed under docs/images/ are kept (see negation below).
+*.png
+!docs/images/*.png
+
+# Trained model checkpoints
+*.h5
+*.keras
+/models/
+
+# Temporary audio demuxed by ffmpeg
+temp_audio*.wav
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Jupyter ---------------------------------------------------------------
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# --- Tooling ---------------------------------------------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- OS / editor -----------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
