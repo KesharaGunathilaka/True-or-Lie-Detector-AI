@@ -210,14 +210,14 @@
     <rect x="880" y="90" width="150" height="76"/>
     <text class="t" x="955" y="120" text-anchor="middle">1D CNN head</text>
     <text class="d" x="955" y="140" text-anchor="middle">Conv1D 64 -&gt; 128</text>
-    <text class="d" x="955" y="155" text-anchor="middle">98.0% / AUC 0.998</text>
+    <text class="d" x="955" y="155" text-anchor="middle">0.913 +/- 0.098 acc</text>
   </g>
 
   <g class="node r" id="n8" data-step="8">
     <rect x="880" y="306" width="150" height="76"/>
     <text class="t" x="955" y="336" text-anchor="middle">SimpleRNN head</text>
     <text class="d" x="955" y="356" text-anchor="middle">RNN 128 -&gt; 64</text>
-    <text class="d" x="955" y="371" text-anchor="middle">70.2% / AUC 0.737</text>
+    <text class="d" x="955" y="371" text-anchor="middle">0.745 +/- 0.067 acc</text>
   </g>
 
   <g class="node o" id="n9" data-step="9">
@@ -302,12 +302,12 @@
       shape:"(1453,) = 1280 visual + 173 audio" },
 
     { node:"n7", links:["l7"], title:"1D CNN head",
-      body:"Two Conv1D blocks (64 then 128 filters, kernel 3) each followed by batch norm, max pooling and dropout, then a 128-unit dense layer. Note it convolves across the feature axis, not across space or time — the spatial work was already done by MobileNetV2.",
-      shape:"98.0% accuracy · ROC AUC 0.998" },
+      body:"Two Conv1D blocks (64 then 128 filters, kernel 3), then Flatten into a 128-unit dense layer. That Flatten produces 46,208 values, so the dense layer alone holds 5.91M of the model’s 5.94M parameters — on 697 training samples it memorises in one epoch, which is why an L2(1e-3) penalty had to be added to make it trainable at all.",
+      shape:"0.913 ± 0.098 accuracy (5 seeds) · ROC AUC 0.993" },
 
     { node:"n8", links:["l8"], title:"SimpleRNN head",
-      body:"Two stacked SimpleRNN layers (128 then 64 units) over the same input. Because pooling already removed the time axis, this recurrence runs over feature positions and cannot model behaviour over time — which is the honest explanation for its weaker score.",
-      shape:"70.2% accuracy · ROC AUC 0.737" },
+      body:"Two stacked SimpleRNN layers (128 then 64 units) over the same input. Because pooling already removed the time axis, this recurrence runs over feature positions and cannot model behaviour over time. It scores lower than the CNN but is markedly more stable across seeds (±0.067 vs ±0.098).",
+      shape:"0.745 ± 0.067 accuracy (5 seeds) · ROC AUC 0.834" },
 
     { node:"n9", links:["l9","l10"], title:"Softmax output",
       body:"A two-class softmax. LabelEncoder sorts alphabetically, so index 0 is 'lie' and index 1 is 'truth' — a detail that inverted the per-class write-up until it was caught. Both heads were trained with Adam at 1e-4 on categorical crossentropy.",

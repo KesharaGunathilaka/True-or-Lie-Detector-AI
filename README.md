@@ -37,22 +37,41 @@ The real use case is not a deployable lie detector (see [Ethical Considerations]
 
 ## Results at a Glance
 
-| Metric | CNN head | RNN head |
-|---|---|---|
-| Accuracy | **98.0%** | 70.2% |
-| ROC AUC | **0.9982** | 0.7369 |
-| Weighted F1 | **0.9758** | 0.6996 |
-| Weighted Precision | **0.9759** | 0.7186 |
-| Weighted Recall | **0.9758** | 0.7016 |
+All figures are **means ± standard deviation over 5 seeds**, measured by
+[`scripts/run_variants.py`](scripts/run_variants.py) on the full dataset and stored in
+[`results/`](results/). Single-run numbers are not meaningful here — see below.
 
-> ### ⚠️ Read this before quoting the 98%
+| Metric | CNN head | RNN head | *MLP control* |
+|---|---|---|---|
+| Accuracy | **0.913 ± 0.098** | 0.745 ± 0.067 | *0.982 ± 0.019* |
+| ROC AUC | 0.993 | 0.834 ± 0.063 | *0.996* |
+| Weighted F1 | 0.910 | 0.743 | *0.982* |
+| Parameters | 5,941,250 | 38,850 | *390,082* |
+| Stability across seeds | Poor (±0.098) | **Good (±0.067)** | *Best (±0.019)* |
+
+> ### ⚠️ Three things to know before quoting any of these
 >
-> Those are **random-split validation** figures, and they are inflated by two distinct problems we found while documenting this project:
+> **1. An earlier version of this project claimed 98%. That was a lucky seed.**
+> Re-running the identical code across 5 seeds gave **0.802 ± 0.142**, with
+> individual seeds landing anywhere from 0.645 to 1.000. One seed trained for
+> 26 epochs and reached 100%; the other four collapsed at epoch 1–2. A ±0.14
+> spread on a 124-sample set means that headline was dominated by random
+> initialisation, not by the model. We diagnosed and fixed the cause (see
+> [CNN](#cnn)), which is why the table above reports a regularised model and a
+> standard deviation instead of a single flattering number.
 >
-> 1. **They are not test scores.** The shipped `test/` directory holds only 8 clips — too few to evaluate on — so the pipeline carves 15% off the training data instead. That same split drives `EarlyStopping(restore_best_weights=True)`, making it a *model-selection* score, not a held-out one.
-> 2. **Clips from the same trial appear on both sides.** The 829 clips are cut from only **109 source courtroom trials**, averaging 7.6 clips each. A random split puts the same person, in the same room, on both sides of the line. See [The Split Problem](#the-split-problem).
+> **2. These are not test scores.** The shipped `test/` directory holds only 8
+> clips — too few to evaluate on — so the pipeline carves 15% off the training
+> data. That same split drives `EarlyStopping(restore_best_weights=True)`,
+> making it a *model-selection* score.
 >
-> A group-aware split is now implemented (`group_split()` in [`src/preprocessing.py`](src/preprocessing.py)) and enforced by [`tests/test_split_integrity.py`](tests/test_split_integrity.py). **The metrics above have not yet been regenerated under it**, and we expect them to drop substantially when they are. We have left the original numbers labelled rather than quietly deleting them.
+> **3. Clips from the same trial appear on both sides.** The 829 clips come from
+> only **109 source courtroom trials**, averaging 7.6 clips each, so a random
+> split puts the same person on both sides. See
+> [The Split Problem](#the-split-problem). A group-aware split is implemented
+> (`group_split()` in [`src/preprocessing.py`](src/preprocessing.py)) and enforced by
+> [`tests/test_split_integrity.py`](tests/test_split_integrity.py), but **has not
+> yet been run**. We expect these numbers to drop substantially under it.
 
 ## Architecture
 
@@ -121,14 +140,14 @@ flowchart TB
     IN --> CNN
     IN --> RNN
 
-    subgraph CNN["1D CNN head - 98.0% / AUC 0.998"]
+    subgraph CNN["1D CNN head - 0.913 +/- 0.098 acc"]
         direction TB
         C1["Conv1D 64, k=3, ReLU"] --> C2["BatchNorm"] --> C3["MaxPool1D 2"] --> C4["Dropout 0.3"]
         C4 --> C5["Conv1D 128, k=3, ReLU"] --> C6["BatchNorm"] --> C7["MaxPool1D 2"] --> C8["Dropout 0.3"]
-        C8 --> C9["Flatten"] --> C10["Dense 128, ReLU"] --> C11["BatchNorm"] --> C12["Dropout 0.5"]
+        C8 --> C9["Flatten - 46,208 values"] --> C10["Dense 128 + L2(1e-3)<br/>5.91M params"] --> C11["BatchNorm"] --> C12["Dropout 0.5"]
     end
 
-    subgraph RNN["SimpleRNN head - 70.2% / AUC 0.737"]
+    subgraph RNN["SimpleRNN head - 0.745 +/- 0.067 acc"]
         direction TB
         R1["SimpleRNN 128<br/>return_sequences"] --> R2["BatchNorm"] --> R3["Dropout 0.3"]
         R3 --> R4["SimpleRNN 64"] --> R5["BatchNorm"] --> R6["Dropout 0.3"]
@@ -338,14 +357,58 @@ python -m pytest tests/ -v
 
 ### CNN
 
-98.0% accuracy, 0.9982 ROC AUC on the random-split validation set. Training accuracy passed 95% quickly and reached ~99% by epoch 30; validation started at 65–75% and reached ~96% by epoch 15.
+**0.913 ± 0.098 accuracy, 0.993 ROC AUC** over 5 seeds.
 
-Per-class — **note that `LabelEncoder` sorts alphabetically, so index 0 is `lie` and index 1 is `truth`**:
+Getting to a number we trusted took some work, and the diagnosis is the most
+interesting result in this project.
+
+**The head was collapsing after one epoch.** `Flatten()` on the 361×128 feature
+map produces 46,208 values feeding a `Dense(128)`. That single layer holds
+**5.91M of the model's 5.94M parameters**, trained on 697 samples — about 8,500
+parameters per example. It memorises almost immediately: validation loss
+bottoms out at epoch 1 and climbs thereafter, so
+`EarlyStopping(patience=7, restore_best_weights=True)` faithfully restores a
+model that trained for *one epoch*. A representative run:
+
+```
+val_acc : 0.806  0.645  0.565  0.597  0.597  0.597  0.605  0.613
+val_loss: 0.456  0.539  0.816  0.709  0.791  0.812  0.743  0.746
+```
+
+**We tried three fixes and measured all of them:**
+
+| Configuration | Params | Accuracy | ROC AUC |
+|---|---|---|---|
+| Flatten head, as originally written | 5,941,250 | 0.847 ± 0.032 | 0.976 |
+| **Flatten + L2(1e-3)** — what the code uses now | 5,941,250 | **0.913 ± 0.098** | 0.993 |
+| GlobalAveragePooling1D | 43,010 | 0.502 ± 0.062 | 0.618 |
+| GlobalMaxPooling1D | 34,370 | 0.698 ± 0.208 | 0.867 |
+| MaxPool 4 + Flatten | 763,458 | 0.844 ± 0.076 | 0.941 |
+| **Dense MLP (control, no convolution)** | 390,082 | **0.982 ± 0.019** | 0.996 |
+
+Global average pooling — the obvious fix — made things **dramatically worse**
+(0.502, barely above chance). That failure is informative: the 1453-d vector is
+`[1280 MobileNetV2 dims | 173 audio dims]` concatenated, so adjacent positions
+are unrelated and averaging across them destroys the signal.
+
+**L2 on the Dense layer worked best.** It lets the head train for 30–47 epochs
+on 3 of 5 seeds instead of stopping at epoch 2, raising the mean to 0.913. But
+±0.098 is still high — this head is *stabilised*, not stable.
+
+**And the control result is uncomfortable:** a plain 3-layer Dense MLP on the
+same features reaches **0.982 ± 0.019** — better than every CNN configuration
+and five times more stable. Conv1D assumes local correlation between adjacent
+inputs; a concatenated feature vector has none. The convolution is
+architecturally unmotivated here, and `Flatten → Dense` was only ever acting as
+an MLP with 5.9M redundant parameters attached.
+
+Per-class for a representative run (seed 42, accuracy 0.806) — **note
+`LabelEncoder` sorts alphabetically, so index 0 is `lie`, index 1 is `truth`**:
 
 | Class | Precision | Recall | F1 | Support |
 |---|---|---|---|---|
-| 0 — lie | 0.97 | 0.98 | 0.98 | 66 |
-| 1 — truth | 0.98 | 0.97 | 0.97 | 58 |
+| 0 — lie | 0.73 | 1.00 | 0.85 | 66 |
+| 1 — truth | 1.00 | 0.59 | 0.74 | 58 |
 
 ### RNN
 
@@ -357,30 +420,77 @@ Per-class — **note that `LabelEncoder` sorts alphabetically, so index 0 is `li
 
 </div>
 
-70.2% accuracy, 0.7369 ROC AUC. Training began near 51% and improved steadily; validation hovered at 60–70% and early stopping halted at epoch 26. `ReduceLROnPlateau` fired repeatedly, indicating the head struggled to extract signal from the pooled representation.
+**0.745 ± 0.067 accuracy, 0.834 ± 0.063 ROC AUC** over 5 seeds, 38,850 parameters.
+
+**The RNN is the better-behaved model, and that is worth saying plainly.**
+Unlike the CNN it trains normally on every seed — 8 to 33 epochs to best
+validation loss, smooth improvement, no collapse — and its spread across seeds
+is a third of the stabilised CNN's. It scores lower but it is far more
+trustworthy run to run.
+
+Per-class for a representative run (seed 42, accuracy 0.734):
 
 | Class | Precision | Recall | F1 | Support |
 |---|---|---|---|---|
-| 0 — lie | 0.78 | 0.61 | 0.68 | 66 |
-| 1 — truth | 0.64 | 0.81 | 0.72 | 58 |
+| 0 — lie | 0.80 | 0.67 | 0.73 | 66 |
+| 1 — truth | 0.68 | 0.81 | 0.74 | 58 |
 
-The RNN **over-predicts truth**: it catches 81% of genuine statements but misses 39% of lies. For a deception detector that is the more dangerous direction to fail in.
+Confusion matrix for that run:
+
+|  | predicted lie | predicted truth |
+|---|---|---|
+| **true lie** | 44 | 22 |
+| **true truth** | 11 | 47 |
+
+The RNN **over-predicts truth**: it catches 81% of genuine statements but misses
+a third of the lies. For a deception detector that is the more dangerous
+direction to fail in.
 
 ### Comparison
 
-See the [model head diagram](#model-heads-cnn-vs-rnn) above for the side-by-side metrics. The CNN wins decisively on this representation — but since neither head receives the time axis, that result says nothing about convolution versus recurrence for video in general.
+| Aspect | **CNN (Flatten + L2)** | **RNN (SimpleRNN)** | *MLP control* |
+|---|---|---|---|
+| Accuracy | **0.913 ± 0.098** | 0.745 ± 0.067 | *0.982 ± 0.019* |
+| ROC AUC | 0.993 | 0.834 ± 0.063 | *0.996* |
+| Weighted F1 | 0.910 | 0.743 | *0.982* |
+| Parameters | 5,941,250 | 38,850 | *390,082* |
+| Epochs to best | 2–47 (unstable) | 8–33 (stable) | *4–31* |
+| Seed stability | Poor (±0.098) | **Good (±0.067)** | *Best (±0.019)* |
+| Sees temporal order? | No | **No** | *No* |
+
+Three honest conclusions:
+
+1. **The CNN outscores the RNN** — the original conclusion holds, but by 17
+   points rather than the 28 originally claimed.
+2. **The RNN is the more reliable model.** It never collapses and its seed
+   spread is smaller. A result you can reproduce is worth more than a higher
+   mean you cannot.
+3. **Neither architecture is justified by the data.** The MLP control beats both
+   while being simpler and far more stable. The feature engineering —
+   MobileNetV2 plus the librosa descriptor — is where all the signal lives.
 
 ### Limitations & Honest Caveats
 
 These are the things we would want a reviewer to know before believing any number above.
 
-1. **The headline metrics are validation, not test.** The 8-clip test directory is unusable, so the pipeline evaluates on a slice of training data that also drove early stopping.
-2. **Trial-level leakage inflates everything.** 829 clips from 109 trials, split randomly. The group-aware fix is implemented but the metrics have not been regenerated under it.
-3. **Neither model sees temporal order.** Mean-pooling removes it before modelling.
-4. **The CNN run is not captured in the committed notebook.** Its stored output stops partway through preprocessing, so the 98% comes from an earlier session. The RNN run *is* fully captured.
-5. **Stored outputs predate the refactor.** The committed cell outputs come from runs before these code changes; re-run in Colab to regenerate them.
-6. **The dataset is small and narrow.** 109 people, one setting (courtroom), one culture, one language. Deception cues are known to vary across all of those.
-7. **17 clips have no usable audio and 25 have no detectable face**, and are represented by zero vectors — a small but real source of label-uncorrelated noise.
+1. **The headline metrics are validation, not test.** The 8-clip test directory
+   is unusable, so the pipeline evaluates on a slice of training data that also
+   drove early stopping.
+2. **Trial-level leakage inflates everything.** 829 clips from 109 trials, split
+   randomly. The group-aware fix is implemented and test-guarded but the metrics
+   have **not** been regenerated under it. This is the single biggest open item.
+3. **The CNN is high-variance even after the fix** (±0.098 across seeds). Treat
+   its mean as approximate and never quote a single run of it.
+4. **Neither model sees temporal order.** Mean-pooling removes it before modelling.
+5. **An MLP outperforms both**, which means the two architectures this project
+   set out to compare are both the wrong tool for the representation it built.
+6. **The committed notebook's stored outputs predate these code changes** and
+   come from the original Colab session. The numbers in this README come from
+   `scripts/` runs recorded in `results/`, not from those cell outputs.
+7. **The dataset is small and narrow.** 109 people, one setting (courtroom), one
+   culture, one language. Deception cues vary across all of those.
+8. **Results are CPU-reproduced.** TensorFlow has no native-Windows GPU support
+   after 2.10, so the local run used CPU. This affects speed, not results.
 
 ## Challenges & What We Learned
 
@@ -432,6 +542,14 @@ True-or-Lie-Detector-AI/
 ├── tests/
 │   ├── test_split_integrity.py             # leakage guards (no TF or dataset needed)
 │   └── test_preprocessing.py               # extractor contracts on synthetic media
+├── scripts/
+│   ├── run_local.py                        # full pipeline end-to-end, no Colab needed
+│   ├── run_seeds.py                        # repeat training across seeds
+│   └── run_variants.py                     # architecture comparison
+├── results/                                # measured metrics backing this README
+│   ├── metrics.json
+│   ├── seed_variance.json
+│   └── variant_comparison.json
 ├── docs/
 │   ├── architecture.html                   # animated pipeline walkthrough
 │   └── images/                             # EDA and results plots
