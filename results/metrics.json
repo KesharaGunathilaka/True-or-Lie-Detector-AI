@@ -1,0 +1,87 @@
+{
+  "run_at": "2026-10-09 00:37:28",
+  "machine": "local CPU (TensorFlow has no native-Windows GPU support)",
+  "split": "random stratified 15% validation, seed 42 (shipped test set = 8 clips, unused)",
+  "n_train_clips": 821,
+  "n_test_clips": 8,
+  "fit_n": 697,
+  "eval_n": 124,
+  "label_mapping": {
+    "lie": 0,
+    "truth": 1
+  },
+  "feature_dim": 1453,
+  "unreadable_clips": 0,
+  "silent_audio_train": 0,
+  "total_seconds": 812.4,
+  "results": {
+    "CNN": {
+      "accuracy": 0.8064516129032258,
+      "roc_auc": 0.9663009404388716,
+      "precision_weighted": 0.8580645161290323,
+      "recall_weighted": 0.8064516129032258,
+      "f1_weighted": 0.7960945085769771,
+      "per_class": {
+        "lie": {
+          "precision": 0.7333333333333333,
+          "recall": 1.0,
+          "f1-score": 0.8461538461538461,
+          "support": 66.0
+        },
+        "truth": {
+          "precision": 1.0,
+          "recall": 0.5862068965517241,
+          "f1-score": 0.7391304347826086,
+          "support": 58.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          66,
+          0
+        ],
+        [
+          24,
+          34
+        ]
+      ],
+      "epochs_run": 8,
+      "best_val_acc": 0.8064516186714172,
+      "train_seconds": 18.8
+    },
+    "RNN": {
+      "accuracy": 0.7338709677419355,
+      "roc_auc": 0.8393416927899686,
+      "precision_weighted": 0.7444132772323516,
+      "recall_weighted": 0.7338709677419355,
+      "f1_weighted": 0.7332994665989332,
+      "per_class": {
+        "lie": {
+          "precision": 0.8,
+          "recall": 0.6666666666666666,
+          "f1-score": 0.7272727272727273,
+          "support": 66.0
+        },
+        "truth": {
+          "precision": 0.6811594202898551,
+          "recall": 0.8103448275862069,
+          "f1-score": 0.7401574803149606,
+          "support": 58.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          44,
+          22
+        ],
+        [
+          11,
+          47
+        ]
+      ],
+      "epochs_run": 36,
+      "best_val_acc": 0.7338709831237793,
+      "train_seconds": 277.4
+    }
+  }
+}
